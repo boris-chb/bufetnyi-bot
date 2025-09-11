@@ -58,50 +58,85 @@ export async function getBot() {
     await ctx.reply(menu.text, { reply_markup: menu.reply_markup });
   });
 
+  bot.command("stop", async (ctx) => {
+    const userId = ctx.from.id;
+
+    await redis.srem("active_users", userId);
+
+    await ctx.reply("🫂 Всего хорошего, ждем вас еще!");
+  });
+
+  bot.action("feedback", async (ctx) => {
+    await ctx.editMessageText("✍️ Напишите свой отзыв:\n");
+  });
+
   bot.on("message", async (ctx) => {
     const fromId = ctx.from!.id;
-    if (!bot) return;
-    if (fromId === process.env.ADMIN_ID) {
-      // Admin broadcasting
-      const userIds = await redis.smembers("active_users");
+    const chatType = ctx.chat.type;
+    const chatId = ctx.chat.id;
 
+    // Only respond in private or when bot mentioned
+    if (chatType !== "private") return;
+
+    // Admin broadcasting
+    if (fromId === +process.env.ADMIN_ID!) {
+      console.log("admin boardcast");
+      const userIds = await redis.smembers("active_users");
       for (const userId of userIds) {
-        // if (+userId === ADMIN_ID) continue; // skip self
+        if (+userId === +process.env.ADMIN_ID!) return; // skip self
         try {
-          if ("text" in ctx.message) {
-            await bot.telegram.sendMessage(userId, ctx.message.text!);
+          if ("text" in ctx.message && ctx.message.text) {
+            await ctx.telegram.sendMessage(userId, ctx.message.text);
           } else if ("document" in ctx.message) {
-            await bot.telegram.sendDocument(
+            await ctx.telegram.sendDocument(
               userId,
-              ctx.message.document!.file_id
+              ctx.message.document!.file_id,
+              { caption: ctx.message.caption || "" }
             );
           } else if ("photo" in ctx.message) {
-            await bot.telegram.sendPhoto(userId, ctx.message.photo![0].file_id);
+            await ctx.telegram.sendPhoto(
+              userId,
+              ctx.message.photo![0].file_id,
+              {
+                caption: ctx.message.caption || "",
+              }
+            );
           } else if ("video" in ctx.message) {
-            await bot.telegram.sendVideo(userId, ctx.message.video!.file_id);
+            await ctx.telegram.sendVideo(userId, ctx.message.video!.file_id, {
+              caption: ctx.message.caption || "",
+            });
           } else if ("location" in ctx.message) {
-            await bot.telegram.sendLocation(
+            await ctx.telegram.sendLocation(
               userId,
               ctx.message.location!.latitude,
               ctx.message.location!.longitude
             );
           }
-          // add other types as needed
         } catch (err) {
           console.error(`Failed to send to ${userId}`, err);
         }
       }
-    } else {
-      // Normal user → forward to admin
-      try {
-        await ctx.forwardMessage(
-          process.env.ADMIN_ID,
-          ctx.chat.id,
-          ctx.message.message_id
-        );
-      } catch (err) {
-        console.error("Failed to forward to admin:", err);
+      return; // stop further processing for admin
+    }
+
+    // Normal user → forward to feedback group
+    try {
+      await ctx.forwardMessage(
+        process.env.FEEDBACK_CHAT_ID!,
+        chatId,
+        ctx.message.message_id
+      );
+    } catch (err) {
+      console.error("Failed to forward to admin:", err);
+      if (chatType === "private") {
+        await ctx.reply("Что-то пошло не так, попробуйте позже 😔");
       }
+    }
+
+    // Optional: reply user in private only
+    if (chatType === "private") {
+      await ctx.reply("Спасибо за ваш отзыв 🍻");
+      await ctx.reply(menu.text, { reply_markup: menu.reply_markup });
     }
   });
 

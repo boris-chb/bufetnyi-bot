@@ -6,15 +6,22 @@ export function mainMenu() {
         [{ text: "Адреса", callback_data: "address:list" }],
         [{ text: "Меню шашлычной", callback_data: "menu:shashlyk" }],
         [{ text: "Меню пельменной", callback_data: "menu:pelmen" }],
-        [{ text: "Буфетная правда", callback_data: "test" }],
+        [{ text: "Буфетная правда", url: "https://t.me/@bufetnayapravda" }],
         [
           {
-            text: "📱 miniapp",
-            web_app: {
-              url: `https://tg-mini-app-flame.vercel.app/`,
-            },
+            text: "Оставить отзыв",
+            callback_data: "feedback",
           },
         ],
+
+        // [
+        //   {
+        //     text: "📱 miniapp",
+        //     web_app: {
+        //       url: `https://tg-mini-app-flame.vercel.app/`,
+        //     },
+        //   },
+        // ],
       ],
     },
   };
