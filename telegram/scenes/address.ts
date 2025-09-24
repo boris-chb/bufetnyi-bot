@@ -23,7 +23,7 @@ const ADDRESSES: Address[] = [
     name: "Горбуфет Шашлычная на Пятницкой",
     address: "Москва, Пятницкая ул, 16, стр.1",
     phone: "+7 916 805 2630",
-    telegram: "@gurbufet_pyatnitskaya",
+    telegram: "gurbufet_pyatnitskaya",
     hours: {
       sun_thu: "12:00-02:00",
       fri_sat: "12:00-05:00",
@@ -35,7 +35,7 @@ const ADDRESSES: Address[] = [
     name: "Горбуфет Шашлычная на Сретенке",
     address: "Москва, Сретенка 36",
     phone: "+7915 277-68-84",
-    telegram: "@alkobufet_shashlik_sretenka",
+    telegram: "alkobufet_shashlik_sretenka",
     hours: {
       sun_thu: "12:00-02:00",
       fri_sat: "12:00-05:00",
@@ -47,7 +47,7 @@ const ADDRESSES: Address[] = [
     name: "Горбуфет Шашлычная на Павелецкой",
     address: "Москва, Новокузнецкая 39",
     phone: "+7909 990-93-10",
-    telegram: "@gurbufet_paveletskaya",
+    telegram: "gurbufet_paveletskaya",
     hours: {
       sun_thu: "12:00-01:00",
       fri_sat: "12:00-03:00",
@@ -71,7 +71,7 @@ const ADDRESSES: Address[] = [
     name: "Горбуфет Пельменная на Тверской",
     address: "Москва, малая Дмитровка, 3",
     phone: "+7 916 963 7962",
-    telegram: "@gurbufet_pelmennaya",
+    telegram: "gorbufet_pelmennaya",
     hours: {
       sun_thu: "12:00-01:00",
       fri_sat: "12:00-03:00",
