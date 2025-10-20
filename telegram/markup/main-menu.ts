@@ -6,7 +6,7 @@ export function mainMenu() {
         [{ text: "Адреса", callback_data: "address:list" }],
         [{ text: "Меню шашлычной", callback_data: "menu:shashlyk" }],
         [{ text: "Меню пельменной", callback_data: "menu:pelmen" }],
-        [{ text: "Буфетная правда", url: "https://t.me/@bufetnayapravda" }],
+        [{ text: "Буфетная правда", url: "https://t.me/bufetnayapravda" }],
         [
           {
             text: "Оставить отзыв",
