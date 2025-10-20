@@ -67,7 +67,10 @@ export async function getBot() {
   });
 
   bot.action("feedback", async (ctx) => {
-    await ctx.editMessageText("✍️ Напишите свой отзыв:\n");
+    await ctx.editMessageText(
+      "✍️ Напишите свой отзыв ниже:\n\n<i>не забывайте в тексте указывать точку в которой вы были!</i>",
+      { parse_mode: "HTML" }
+    );
   });
 
   bot.on("message", async (ctx) => {
