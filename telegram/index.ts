@@ -34,8 +34,8 @@ export async function getBot() {
     await ctx.reply(menu.text, { reply_markup: menu.reply_markup });
   });
 
-  bot.action("main", (ctx) => {
-    ctx.editMessageText(menu.text, { reply_markup: menu.reply_markup });
+  bot.action("main", async (ctx) => {
+    await ctx.editMessageText(menu.text, { reply_markup: menu.reply_markup });
   });
 
   bot.action(/^address:(.+)$/, (ctx) => {
@@ -124,7 +124,7 @@ export async function getBot() {
 
     // Normal user → forward to feedback group
     try {
-      await ctx.forwardMessage(
+      await ctx.telegram.forwardMessage(
         process.env.FEEDBACK_CHAT_ID!,
         chatId,
         ctx.message.message_id
@@ -141,6 +141,18 @@ export async function getBot() {
       await ctx.reply("Спасибо за ваш отзыв 🍻");
       await ctx.reply(menu.text, { reply_markup: menu.reply_markup });
     }
+  });
+
+  process.once("SIGINT", () => bot?.stop("SIGINT"));
+  process.once("SIGTERM", () => bot?.stop("SIGTERM"));
+  process.on("unhandledRejection", (err) => {
+    console.error("❌ UNHANDLED REJECTION:", err);
+  });
+
+  bot.catch(async (err, ctx) => {
+    console.error("Unhandled error:", err);
+    await ctx.editMessageText("Что-то пошло не так, попробуйте позже");
+    await ctx.reply(menu.text, { reply_markup: menu.reply_markup });
   });
 
   return bot;
