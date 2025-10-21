@@ -3,19 +3,19 @@ export function mainMenu() {
     text: "Чем могу быть полезен? 👋",
     reply_markup: {
       inline_keyboard: [
-        [{ text: "Адреса", callback_data: "address:list" }],
-        [{ text: "Меню шашлычной", callback_data: "menu:shashlyk" }],
-        [{ text: "Меню пельменной", callback_data: "menu:pelmen" }],
-        [{ text: "Буфетная правда", url: "https://t.me/bufetnayapravda" }],
+        [{ text: "📍 Адреса", callback_data: "address:list" }],
         [
           {
-            text: "📱 Меню",
-            web_app: { url: "https://shashlichnaya.vercel.app/" },
+            text: "🥩 Меню шашлычной",
+            web_app: { url: "https://shashlichnaya.vercel.app/menu" },
           },
         ],
+        [{ text: "🥟 Меню пельменной", callback_data: "menu:pelmen" }],
+        [{ text: "📃 Буфетная правда", url: "https://t.me/bufetnayapravda" }],
+
         [
           {
-            text: "Оставить отзыв",
+            text: "✍️ Оставить отзыв",
             callback_data: "feedback",
           },
         ],
