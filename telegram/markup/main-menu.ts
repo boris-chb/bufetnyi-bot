@@ -9,6 +9,12 @@ export function mainMenu() {
         [{ text: "Буфетная правда", url: "https://t.me/bufetnayapravda" }],
         [
           {
+            text: "📱 Меню",
+            web_app: { url: "https://shashlichnaya.vercel.app/" },
+          },
+        ],
+        [
+          {
             text: "Оставить отзыв",
             callback_data: "feedback",
           },
