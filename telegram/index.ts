@@ -2,6 +2,7 @@ import { Context, Scenes, session, Telegraf } from "telegraf";
 import { mainMenu as createMainMenu } from "./markup/main-menu";
 import { mainStage } from "./scenes";
 import { redis } from "../redis";
+import { getAllUsers, recordUser } from "../redis/actions";
 
 let bot: Telegraf<MyContext> | undefined;
 
@@ -14,6 +15,7 @@ export interface MyContext extends Context {
   scene: Scenes.SceneContextScene<MyContext, MySceneSession>;
   path: string;
 }
+
 export interface MySession extends Scenes.SceneSession<MySceneSession> {
   // Add other session properties here if needed
 }
@@ -30,7 +32,12 @@ export async function getBot() {
   const menu = createMainMenu();
 
   bot.start(async (ctx) => {
-    await trackUser(ctx.from!.id);
+    await recordUser({
+      id: ctx.from!.id,
+      username: ctx.from!.username!,
+      name: `${ctx.from!.first_name || ""} ${ctx.from!.last_name || ""}`,
+    });
+
     await ctx.reply(menu.text, { reply_markup: menu.reply_markup });
   });
 
@@ -60,10 +67,34 @@ export async function getBot() {
 
   bot.command("stop", async (ctx) => {
     const userId = ctx.from.id;
+    const key = `user:${ctx.from.username}`;
 
     await redis.srem("active_users", userId);
+    await redis.del(key);
 
     await ctx.reply("🫂 Всего хорошего, ждем вас еще!");
+  });
+
+  bot.command("stats", async (ctx) => {
+    if (!isAdmin(ctx)) return;
+
+    const users = await getAllUsers();
+
+    if (!users || users.length === 0) {
+      await ctx.reply("😔 Нет данных о пользователях");
+      return;
+    }
+
+    const userListStr = users
+      .map(
+        (u) =>
+          `<blockquote expandable>@${u.username} - <b>${u.name}</b> (<i>${u.id}</i>)\n<b>• Первый визит:</b> ${u.first_seen}\n<b>• Последний визит:</b> ${u.last_seen}</blockquote>`
+      )
+      .join("\n");
+
+    await ctx.reply(`📊 Статистика пользователей: ${userListStr}`, {
+      parse_mode: "HTML",
+    });
   });
 
   bot.action("feedback", async (ctx) => {
@@ -158,14 +189,6 @@ export async function getBot() {
   return bot;
 }
 
-export async function trackUser(userId: number) {
-  const isNew = !(await redis.sismember("active_users", userId));
-  if (isNew) {
-    await redis.sadd("active_users", userId);
-  }
-  return isNew;
-}
-
 export async function broadcast(bot: Telegraf<MyContext>, message: string) {
   const userIds = await redis.smembers("active_users");
 
@@ -176,4 +199,12 @@ export async function broadcast(bot: Telegraf<MyContext>, message: string) {
       console.error(`Failed to send message to ${userId}:`, err);
     }
   }
+}
+
+function isAdmin(ctx: MyContext) {
+  const ADMINS = process.env.ADMINS?.split(",") ?? [];
+  const isAdmin = ADMINS.includes(ctx.from!.username!);
+  console.log("admin:", ctx.from?.username);
+
+  return isAdmin;
 }

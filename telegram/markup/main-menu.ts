@@ -7,10 +7,15 @@ export function mainMenu() {
         [
           {
             text: "🥩 Меню шашлычной",
-            web_app: { url: "https://shashlichnaya.vercel.app/menu" },
+            web_app: { url: "https://shashlichnaya.vercel.app/menu/shashlyk" },
           },
         ],
-        [{ text: "🥟 Меню пельменной", callback_data: "menu:pelmen" }],
+        [
+          {
+            text: "🥟 Меню пельменной",
+            web_app: { url: "https://shashlichnaya.vercel.app/menu/pelmen" },
+          },
+        ],
         [{ text: "📃 Буфетная правда", url: "https://t.me/bufetnayapravda" }],
 
         [
