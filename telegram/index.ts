@@ -29,17 +29,7 @@ export async function getBot() {
     bot.use(mainStage.middleware());
   }
 
-  const menu = createMainMenu();
-
-  bot.start(async (ctx) => {
-    await recordUser({
-      id: ctx.from!.id,
-      username: ctx.from!.username!,
-      name: `${ctx.from!.first_name || ""} ${ctx.from!.last_name || ""}`,
-    });
-
-    await ctx.reply(menu.text, { reply_markup: menu.reply_markup });
-  });
+  bot.start(onStart);
 
   bot.action("main", async (ctx) => {
     await ctx.editMessageText(menu.text, { reply_markup: menu.reply_markup });
@@ -75,7 +65,7 @@ export async function getBot() {
     await ctx.reply("🫂 Всего хорошего, ждем вас еще!");
   });
 
-  bot.command("stats", async (ctx) => {
+  bot.action("stats", async (ctx) => {
     if (!isAdmin(ctx)) return;
 
     const users = await getAllUsers();
@@ -92,9 +82,11 @@ export async function getBot() {
       )
       .join("\n");
 
-    await ctx.reply(`📊 Статистика пользователей: ${userListStr}`, {
+    await ctx.editMessageText(`📊 Статистика пользователей: ${userListStr}`, {
       parse_mode: "HTML",
     });
+
+    await onStart(ctx);
   });
 
   bot.action("feedback", async (ctx) => {
@@ -204,7 +196,18 @@ export async function broadcast(bot: Telegraf<MyContext>, message: string) {
 function isAdmin(ctx: MyContext) {
   const ADMINS = process.env.ADMINS?.split(",") ?? [];
   const isAdmin = ADMINS.includes(ctx.from!.username!);
-  console.log("admin:", ctx.from?.username);
 
   return isAdmin;
+}
+
+async function onStart(ctx: MyContext) {
+  const admin = isAdmin(ctx);
+  const menu = createMainMenu(admin);
+  await recordUser({
+    id: ctx.from!.id,
+    username: ctx.from!.username!,
+    name: `${ctx.from!.first_name || ""} ${ctx.from!.last_name || ""}`,
+  });
+
+  await ctx.reply(menu.text, { reply_markup: menu.reply_markup });
 }
