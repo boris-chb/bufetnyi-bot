@@ -1,37 +1,24 @@
-import { Context, Scenes, session, Telegraf } from "telegraf";
+import { session, Telegraf } from "telegraf";
 import { mainMenu as createMainMenu } from "./markup/main-menu";
 import { mainStage } from "./scenes";
 import { redis } from "../redis";
 import { getAllUsers, recordUser } from "../redis/actions";
+import type { AppContext, AppSession } from "./context";
 
-let bot: Telegraf<MyContext> | undefined;
-
-export interface MySceneSession extends Scenes.SceneSessionData {
-  sceneSessionProp: string;
-}
-
-export interface MyContext extends Context {
-  session: MySession;
-  scene: Scenes.SceneContextScene<MyContext, MySceneSession>;
-  path: string;
-}
-
-export interface MySession extends Scenes.SceneSession<MySceneSession> {
-  // Add other session properties here if needed
-}
+let bot: Telegraf<AppContext> | undefined;
 
 export async function getBot() {
   if (!bot) {
-    bot = new Telegraf<MyContext>(process.env.TELEGRAM_BOT_TOKEN!);
-    // bot.use(playerStage.middleware());
-
-    bot.use(session({ defaultSession: (): MySession => ({}) }));
+    bot = new Telegraf<AppContext>(process.env.TELEGRAM_BOT_TOKEN!);
+    bot.use(session({ defaultSession: (): AppSession => ({}) }));
     bot.use(mainStage.middleware());
   }
 
   bot.start(onStart);
 
   bot.action("main", async (ctx) => {
+    const admin = isAdmin(ctx);
+    const menu = createMainMenu(admin);
     await ctx.editMessageText(menu.text, { reply_markup: menu.reply_markup });
   });
 
@@ -39,30 +26,6 @@ export async function getBot() {
     const path = ctx.match[1];
 
     ctx.scene.enter("address", { path });
-  });
-
-  bot.action(/^menu:(.+)$/, async (ctx) => {
-    const menuType = ctx.match[1];
-
-    const filePath = Bun.file(`files/menu-${menuType}.pdf`);
-
-    await ctx.deleteMessage();
-    if (await filePath.exists()) {
-      await ctx.replyWithDocument({ source: `./files/menu-${menuType}.pdf` });
-    } else {
-      await ctx.reply("Меню не найдено.");
-    }
-    await ctx.reply(menu.text, { reply_markup: menu.reply_markup });
-  });
-
-  bot.command("stop", async (ctx) => {
-    const userId = ctx.from.id;
-    const key = `user:${ctx.from.username}`;
-
-    await redis.srem("active_users", userId);
-    await redis.del(key);
-
-    await ctx.reply("🫂 Всего хорошего, ждем вас еще!");
   });
 
   bot.action("stats", async (ctx) => {
@@ -76,10 +39,16 @@ export async function getBot() {
     }
 
     const userListStr = users
-      .map(
-        (u) =>
-          `<blockquote expandable>@${u.username} - <b>${u.name}</b> (<i>${u.id}</i>)\n<b>• Первый визит:</b> ${u.first_seen}\n<b>• Последний визит:</b> ${u.last_seen}</blockquote>`
-      )
+      .map((u) => {
+        const firstSeen = new Date(u.first_seen).toLocaleString("ru-RU", {
+          timeZone: "Europe/Moscow",
+        });
+        const lastSeen = new Date(u.last_seen).toLocaleString("ru-RU", {
+          timeZone: "Europe/Moscow",
+        });
+
+        return `<blockquote expandable>@${u.username} - <b>${u.name}</b> (<i>${u.id}</i>)\n<b>• Первый визит:</b> ${firstSeen}\n<b>• Последний визит:</b> ${lastSeen}</blockquote>`;
+      })
       .join("\n");
 
     await ctx.editMessageText(`📊 Статистика пользователей: ${userListStr}`, {
@@ -97,6 +66,8 @@ export async function getBot() {
   });
 
   bot.on("message", async (ctx) => {
+    const admin = isAdmin(ctx);
+    const menu = createMainMenu(admin);
     const fromId = ctx.from!.id;
     const chatType = ctx.chat.type;
     const chatId = ctx.chat.id;
@@ -166,6 +137,16 @@ export async function getBot() {
     }
   });
 
+  bot.command("stop", async (ctx) => {
+    const userId = ctx.from.id;
+    const key = `user:${ctx.from.username}`;
+
+    await redis.srem("active_users", userId);
+    await redis.del(key);
+
+    await ctx.reply("🫂 Всего хорошего, ждем вас еще!");
+  });
+
   process.once("SIGINT", () => bot?.stop("SIGINT"));
   process.once("SIGTERM", () => bot?.stop("SIGTERM"));
   process.on("unhandledRejection", (err) => {
@@ -173,6 +154,8 @@ export async function getBot() {
   });
 
   bot.catch(async (err, ctx) => {
+    const admin = isAdmin(ctx);
+    const menu = createMainMenu(admin);
     console.error("Unhandled error:", err);
     await ctx.editMessageText("Что-то пошло не так, попробуйте позже");
     await ctx.reply(menu.text, { reply_markup: menu.reply_markup });
@@ -181,7 +164,7 @@ export async function getBot() {
   return bot;
 }
 
-export async function broadcast(bot: Telegraf<MyContext>, message: string) {
+export async function broadcast(bot: Telegraf<AppContext>, message: string) {
   const userIds = await redis.smembers("active_users");
 
   for (const userId of userIds) {
@@ -193,14 +176,7 @@ export async function broadcast(bot: Telegraf<MyContext>, message: string) {
   }
 }
 
-function isAdmin(ctx: MyContext) {
-  const ADMINS = process.env.ADMINS?.split(",") ?? [];
-  const isAdmin = ADMINS.includes(ctx.from!.username!);
-
-  return isAdmin;
-}
-
-async function onStart(ctx: MyContext) {
+async function onStart(ctx: AppContext) {
   const admin = isAdmin(ctx);
   const menu = createMainMenu(admin);
   await recordUser({
@@ -210,4 +186,11 @@ async function onStart(ctx: MyContext) {
   });
 
   await ctx.reply(menu.text, { reply_markup: menu.reply_markup });
+}
+
+function isAdmin(ctx: AppContext) {
+  const ADMINS = process.env.ADMINS?.split(",") ?? [];
+  const isAdmin = ADMINS.includes(ctx.from!.username!);
+
+  return isAdmin;
 }

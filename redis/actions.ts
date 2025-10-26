@@ -18,9 +18,7 @@ export async function recordUser({
   name?: string;
 }) {
   const key = `user:${username}`;
-  const now = new Date().toLocaleString("ru-RU", {
-    timeZone: "Europe/Moscow",
-  });
+  const now = Date.now().toString();
 
   await redis.hsetnx(key, "first_seen", now);
 
