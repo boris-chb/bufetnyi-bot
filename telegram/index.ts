@@ -71,7 +71,7 @@ export async function getBot() {
     const users = await getAllUsers();
 
     if (!users || users.length === 0) {
-      await ctx.reply("😔 Нет данных о пользователях");
+      await ctx.editMessageText("😔 Не нашел данных о пользователях");
       return;
     }
 
