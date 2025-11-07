@@ -1,9 +1,10 @@
 import { session, Telegraf } from "telegraf";
-import { mainMenu as createMainMenu } from "./markup/main-menu";
-import { mainStage } from "./scenes";
 import { redis } from "../redis";
 import { getAllUsers, recordUser } from "../redis/actions";
 import type { AppContext, AppSession } from "./context";
+import { mainMenu as createMainMenu } from "./markup/main-menu";
+import { mainStage } from "./scenes";
+import { google } from "googleapis";
 
 let bot: Telegraf<AppContext> | undefined;
 
@@ -31,6 +32,8 @@ export async function getBot() {
   bot.action("stats", async (ctx) => {
     if (!isAdmin(ctx)) return;
 
+    await ctx.deleteMessage();
+
     const users = await getAllUsers();
 
     if (!users || users.length === 0) {
@@ -38,22 +41,26 @@ export async function getBot() {
       return;
     }
 
-    const userListStr = users
-      .map((u) => {
-        const firstSeen = new Date(u.first_seen).toLocaleString("ru-RU", {
-          timeZone: "Europe/Moscow",
-        });
-        const lastSeen = new Date(u.last_seen).toLocaleString("ru-RU", {
-          timeZone: "Europe/Moscow",
-        });
+    const chunks = [];
+    for (let i = 0; i < users.length; i += 20) {
+      chunks.push(users.slice(i, i + 20));
+    }
 
-        return `<blockquote expandable>@${u.username} - <b>${u.name}</b> (<i>${u.id}</i>)\n<b>• Первый визит:</b> ${firstSeen}\n<b>• Последний визит:</b> ${lastSeen}</blockquote>`;
-      })
-      .join("\n");
+    for (const group of chunks) {
+      const msg = group
+        .map((u) => {
+          const firstSeen = new Date(u.first_seen).toLocaleString("ru-RU", {
+            timeZone: "Europe/Moscow",
+          });
+          const lastSeen = new Date(u.last_seen).toLocaleString("ru-RU", {
+            timeZone: "Europe/Moscow",
+          });
+          return `<blockquote expandable><b>${u.name}</b> (@${u.username})\n• Первый визит: ${firstSeen}\n<b>• Последний визит: </b> ${lastSeen}</blockquote>`;
+        })
+        .join("\n");
 
-    await ctx.editMessageText(`📊 Статистика пользователей: ${userListStr}`, {
-      parse_mode: "HTML",
-    });
+      await ctx.reply(msg, { parse_mode: "HTML" });
+    }
 
     await onStart(ctx);
   });
@@ -185,6 +192,13 @@ async function onStart(ctx: AppContext) {
     name: `${ctx.from!.first_name || ""} ${ctx.from!.last_name || ""}`,
   });
 
+  addUserToSheet({
+    id: ctx.from!.id,
+    name: `${ctx.from!.first_name || ""} ${ctx.from!.last_name || ""}`,
+    username: ctx.from!.username!,
+    join_date: Date.now(),
+  });
+
   await ctx.reply(menu.text, { reply_markup: menu.reply_markup });
 }
 
@@ -193,4 +207,50 @@ function isAdmin(ctx: AppContext) {
   const isAdmin = ADMINS.includes(ctx.from!.username!);
 
   return isAdmin;
+}
+
+async function addUserToSheet(user: {
+  id: number;
+  name: string;
+  username: string;
+  join_date: number;
+}) {
+  const auth = new google.auth.GoogleAuth({
+    keyFile: "service-account.json",
+    scopes: ["https://www.googleapis.com/auth/spreadsheets"],
+  });
+
+  const sheets = google.sheets({ version: "v4", auth });
+  const spreadsheetId = "1_q2yxUx4dI1hw05HmwAAwttKc8kGgQfHZGGX5lfPp0A";
+
+  const { data } = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: "Sheet1!A:A",
+  });
+
+  const existingIds = new Set(data.values?.flat() || []);
+
+  if (existingIds.has(user.id.toString())) {
+    console.log("User already exists in sheet");
+    return;
+  }
+
+  const values = [
+    [
+      user.id,
+      user.name,
+      user.username,
+      new Date(user.join_date).toLocaleString("ru-RU"),
+    ],
+  ];
+
+  await sheets.spreadsheets.values.append({
+    spreadsheetId,
+    range: "Sheet1", // just the sheet name
+    valueInputOption: "RAW",
+    insertDataOption: "INSERT_ROWS",
+    requestBody: {
+      values,
+    },
+  });
 }
