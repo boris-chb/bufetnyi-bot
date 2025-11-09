@@ -51,5 +51,7 @@ export async function getAllUsers(): Promise<User[]> {
     });
   } while (cursor !== 0);
 
+  users.sort((a, b) => Number(b.first_seen) - Number(a.first_seen));
+
   return users;
 }

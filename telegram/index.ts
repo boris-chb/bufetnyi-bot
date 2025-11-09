@@ -30,6 +30,7 @@ export async function getBot() {
     const admin = isAdmin(ctx);
     const menu = createMainMenu(admin);
     await ctx.editMessageText(menu.text, { reply_markup: menu.reply_markup });
+    await ctx.answerCbQuery();
   });
 
   bot.action(/^address:(.+)$/, (ctx) => {

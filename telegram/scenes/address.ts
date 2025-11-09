@@ -1,8 +1,8 @@
 import { Scenes } from "telegraf";
-import type { MyContext } from "..";
-import { bold, fmt, italic, link, mention } from "telegraf/format";
+import { bold, fmt, link } from "telegraf/format";
+import type { AppContext } from "../context";
 
-export const address = new Scenes.BaseScene<MyContext>("address");
+export const address = new Scenes.BaseScene<AppContext>("address");
 
 export type Address = {
   id: string;
@@ -105,6 +105,8 @@ address.enter(async (ctx) => {
       reply_markup: menu.reply_markup,
     });
   }
+
+  await ctx.answerCbQuery();
 });
 
 function adressItem(address: Address) {
