@@ -5,8 +5,17 @@ import type { AppContext, AppSession } from "./context";
 import { mainMenu as createMainMenu } from "./markup/main-menu";
 import { mainStage } from "./scenes";
 import { google } from "googleapis";
+import { GoogleAuth } from "google-auth-library";
 
 let bot: Telegraf<AppContext> | undefined;
+
+type User = {
+  id: string;
+  name: string;
+  username: string;
+  first_seen: string;
+  last_seen: string;
+};
 
 export async function getBot() {
   if (!bot) {
@@ -41,26 +50,12 @@ export async function getBot() {
       return;
     }
 
-    const chunks = [];
-    for (let i = 0; i < users.length; i += 20) {
-      chunks.push(users.slice(i, i + 20));
-    }
+    await syncUsers(users);
 
-    for (const group of chunks) {
-      const msg = group
-        .map((u) => {
-          const firstSeen = new Date(u.first_seen).toLocaleString("ru-RU", {
-            timeZone: "Europe/Moscow",
-          });
-          const lastSeen = new Date(u.last_seen).toLocaleString("ru-RU", {
-            timeZone: "Europe/Moscow",
-          });
-          return `<blockquote expandable><b>${u.name}</b> (@${u.username})\n• Первый визит: ${firstSeen}\n<b>• Последний визит: </b> ${lastSeen}</blockquote>`;
-        })
-        .join("\n");
-
-      await ctx.reply(msg, { parse_mode: "HTML" });
-    }
+    await ctx.reply(
+      'Обновил <a href="https://docs.google.com/spreadsheets/d/1_q2yxUx4dI1hw05HmwAAwttKc8kGgQfHZGGX5lfPp0A/">таблицу</a> успешно.',
+      { parse_mode: "HTML" }
+    );
 
     await onStart(ctx);
   });
@@ -192,13 +187,6 @@ async function onStart(ctx: AppContext) {
     name: `${ctx.from!.first_name || ""} ${ctx.from!.last_name || ""}`,
   });
 
-  addUserToSheet({
-    id: ctx.from!.id,
-    name: `${ctx.from!.first_name || ""} ${ctx.from!.last_name || ""}`,
-    username: ctx.from!.username!,
-    join_date: Date.now(),
-  });
-
   await ctx.reply(menu.text, { reply_markup: menu.reply_markup });
 }
 
@@ -215,23 +203,24 @@ async function addUserToSheet(user: {
   username: string;
   join_date: number;
 }) {
-  const auth = new google.auth.GoogleAuth({
-    keyFile: "service-account.json",
+  const auth = new GoogleAuth({
+    credentials: JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS!),
     scopes: ["https://www.googleapis.com/auth/spreadsheets"],
   });
 
   const sheets = google.sheets({ version: "v4", auth });
-  const spreadsheetId = "1_q2yxUx4dI1hw05HmwAAwttKc8kGgQfHZGGX5lfPp0A";
+  const spreadsheetId = process.env.GOOGLE_SHEET_ID;
+  const sheetName = process.env.GOOGLE_SHEET_NAME;
 
   const { data } = await sheets.spreadsheets.values.get({
     spreadsheetId,
-    range: "Sheet1!A:A",
+    range: `${sheetName}!A:A`,
   });
 
   const existingIds = new Set(data.values?.flat() || []);
 
   if (existingIds.has(user.id.toString())) {
-    console.log("User already exists in sheet");
+    console.log("User already exists");
     return;
   }
 
@@ -246,11 +235,50 @@ async function addUserToSheet(user: {
 
   await sheets.spreadsheets.values.append({
     spreadsheetId,
-    range: "Sheet1", // just the sheet name
+    range: `${sheetName}`,
     valueInputOption: "RAW",
     insertDataOption: "INSERT_ROWS",
     requestBody: {
       values,
     },
   });
+}
+
+async function syncUsers(users: User[]) {
+  const auth = new GoogleAuth({
+    credentials: JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS!),
+    scopes: ["https://www.googleapis.com/auth/spreadsheets"],
+  });
+
+  const sheets = google.sheets({ version: "v4", auth });
+  const spreadsheetId = process.env.GOOGLE_SHEET_ID;
+  const sheetName = process.env.GOOGLE_SHEET_NAME;
+
+  const values = users.map((u) => [
+    u.id,
+    u.name.trim(),
+    u.username,
+    formatTimestampForSheets(+u.first_seen),
+    formatTimestampForSheets(+u.last_seen),
+  ]);
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: `${sheetName}!A1:E${users.length + 1}`,
+    valueInputOption: "RAW",
+    requestBody: {
+      values: [
+        ["id", "name", "username", "first_seen", "last_seen"],
+        ...values,
+      ],
+    },
+  });
+}
+
+function formatTimestampForSheets(ts: number) {
+  const d = new Date(ts);
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(
+    d.getHours()
+  )}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }

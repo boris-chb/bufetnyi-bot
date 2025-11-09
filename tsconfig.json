@@ -3,9 +3,10 @@
     // Enable latest features
     "lib": ["ESNext", "DOM"],
     "target": "ESNext",
-    "module": "node16",
+    "module": "nodenext",
     "moduleDetection": "force",
-    "moduleResolution": "node16",
+    "moduleResolution": "node",
+    "ignoreDeprecations": "6.0",
     "jsx": "react-jsx",
     "allowJs": true,
 
