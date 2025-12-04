@@ -59,7 +59,7 @@ const ADDRESSES: Address[] = [
     name: "Горбуфет Шашлычная на Маяковской",
     address: "Москва, 2-ая Тверская-Ямская, 2",
     phone: "+7962 945-95-49",
-    telegram: null,
+    telegram: "gurbufet_mayak",
     hours: {
       sun_thu: "12:00-02:00",
       fri_sat: "12:00-05:00",
@@ -77,6 +77,18 @@ const ADDRESSES: Address[] = [
       fri_sat: "12:00-03:00",
     },
     url: "https://yandex.ru/maps/-/CLUsN0Pn",
+  },
+  {
+    id: "6",
+    name: "Горбуфет Шашлычная на Кутузовском",
+    address: "Москва, Кутузовский проспект 36А",
+    phone: "+7925 800 52 54",
+    telegram: "alkobufet_shashlik_kutuza",
+    hours: {
+      sun_thu: "12:00-01:00",
+      fri_sat: "12:00-03:00",
+    },
+    url: "https://yandex.ru/maps/org/195930715245",
   },
 ];
 
