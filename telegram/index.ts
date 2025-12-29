@@ -4,22 +4,24 @@ import { getAllUsers, recordUser } from "../redis/actions";
 import type { AppContext, AppSession } from "./context";
 import { mainMenu as createMainMenu } from "./markup/main-menu";
 import { mainStage } from "./scenes";
-import { google } from "googleapis";
-import { GoogleAuth } from "google-auth-library";
+import { syncUsersToSheet } from "./google-sheets";
 
 let bot: Telegraf<AppContext> | undefined;
 
-type User = {
-  id: string;
-  name: string;
-  username: string;
-  first_seen: string;
-  last_seen: string;
-};
+// Constants
+const ADMIN_ID = Number(process.env.ADMIN_ID);
+const FEEDBACK_CHAT_ID = process.env.FEEDBACK_CHAT_ID;
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+const GOOGLE_SHEET_URL =
+  "https://docs.google.com/spreadsheets/d/1_q2yxUx4dI1hw05HmwAAwttKc8kGgQfHZGGX5lfPp0A/";
+const REDIS_ACTIVE_USERS_KEY = "active_users";
 
 export async function getBot() {
   if (!bot) {
-    bot = new Telegraf<AppContext>(process.env.TELEGRAM_BOT_TOKEN!);
+    if (!TELEGRAM_BOT_TOKEN) {
+      throw new Error("TELEGRAM_BOT_TOKEN is required");
+    }
+    bot = new Telegraf<AppContext>(TELEGRAM_BOT_TOKEN);
     bot.use(session({ defaultSession: (): AppSession => ({}) }));
     bot.use(mainStage.middleware());
   }
@@ -51,12 +53,16 @@ export async function getBot() {
       return;
     }
 
-    await syncUsers(users);
-
-    await ctx.reply(
-      'Обновил <a href="https://docs.google.com/spreadsheets/d/1_q2yxUx4dI1hw05HmwAAwttKc8kGgQfHZGGX5lfPp0A/">таблицу</a> успешно.',
-      { parse_mode: "HTML" }
-    );
+    try {
+      await syncUsersToSheet(users);
+      await ctx.reply(
+        `Обновил <a href="${GOOGLE_SHEET_URL}">таблицу</a> успешно.`,
+        { parse_mode: "HTML" }
+      );
+    } catch (error) {
+      console.error("Failed to sync users to sheet:", error);
+      await ctx.reply("❌ Ошибка при обновлении таблицы");
+    }
 
     await onStart(ctx);
   });
@@ -69,83 +75,51 @@ export async function getBot() {
   });
 
   bot.on("message", async (ctx) => {
-    const admin = isAdmin(ctx);
-    const menu = createMainMenu(admin);
-    const fromId = ctx.from!.id;
-    const chatType = ctx.chat.type;
+    if (!ctx.from || ctx.chat.type !== "private") return;
+
+    const fromId = ctx.from.id;
     const chatId = ctx.chat.id;
 
-    // Only respond in private or when bot mentioned
-    if (chatType !== "private") return;
-
     // Admin broadcasting
-    if (fromId === +process.env.ADMIN_ID!) {
-      console.log("admin boardcast");
-      const userIds = await redis.smembers("active_users");
-      for (const userId of userIds) {
-        if (+userId === +process.env.ADMIN_ID!) return; // skip self
-        try {
-          if ("text" in ctx.message && ctx.message.text) {
-            await ctx.telegram.sendMessage(userId, ctx.message.text);
-          } else if ("document" in ctx.message) {
-            await ctx.telegram.sendDocument(
-              userId,
-              ctx.message.document!.file_id,
-              { caption: ctx.message.caption || "" }
-            );
-          } else if ("photo" in ctx.message) {
-            await ctx.telegram.sendPhoto(
-              userId,
-              ctx.message.photo![0].file_id,
-              {
-                caption: ctx.message.caption || "",
-              }
-            );
-          } else if ("video" in ctx.message) {
-            await ctx.telegram.sendVideo(userId, ctx.message.video!.file_id, {
-              caption: ctx.message.caption || "",
-            });
-          } else if ("location" in ctx.message) {
-            await ctx.telegram.sendLocation(
-              userId,
-              ctx.message.location!.latitude,
-              ctx.message.location!.longitude
-            );
-          }
-        } catch (err) {
-          console.error(`Failed to send to ${userId}`, err);
-        }
-      }
-      return; // stop further processing for admin
+    if (ADMIN_ID && fromId === ADMIN_ID) {
+      await handleAdminBroadcast(ctx);
+      return;
     }
 
     // Normal user → forward to feedback group
-    try {
-      await ctx.telegram.forwardMessage(
-        process.env.FEEDBACK_CHAT_ID!,
-        chatId,
-        ctx.message.message_id
-      );
-    } catch (err) {
-      console.error("Failed to forward to admin:", err);
-      if (chatType === "private") {
-        await ctx.reply("Что-то пошло не так, попробуйте позже 😔");
-      }
-    }
+    await forwardMessageToFeedback(ctx, chatId);
 
-    // Optional: reply user in private only
-    if (chatType === "private") {
-      await ctx.reply("Спасибо за ваш отзыв 🍻");
-      await ctx.reply(menu.text, { reply_markup: menu.reply_markup });
-    }
+    // Reply user in private
+    const admin = isAdmin(ctx);
+    const menu = createMainMenu(admin);
+    await ctx.reply("Спасибо за ваш отзыв 🍻");
+    await ctx.reply(menu.text, { reply_markup: menu.reply_markup });
   });
 
   bot.command("stop", async (ctx) => {
-    const userId = ctx.from.id;
-    const key = `user:${ctx.from.username}`;
+    if (!ctx.from) return;
 
-    await redis.srem("active_users", userId);
-    await redis.del(key);
+    const userId = ctx.from.id;
+    const username = ctx.from.username;
+
+    // Remove from active users set
+    await redis.srem(REDIS_ACTIVE_USERS_KEY, userId.toString());
+
+    // Delete user hash - try by username first if available, then scan by user ID
+    let deleted = false;
+    if (username) {
+      const key = `user:${username}`;
+      const exists = await redis.exists(key);
+      if (exists) {
+        await redis.del(key);
+        deleted = true;
+      }
+    }
+
+    // If not deleted by username (or no username), find and delete by user ID
+    if (!deleted) {
+      await deleteUserByUserId(userId);
+    }
 
     await ctx.reply("🫂 Всего хорошего, ждем вас еще!");
   });
@@ -153,7 +127,11 @@ export async function getBot() {
   process.once("SIGINT", () => bot?.stop("SIGINT"));
   process.once("SIGTERM", () => bot?.stop("SIGTERM"));
   process.on("unhandledRejection", (err) => {
-    console.error("❌ UNHANDLED REJECTION:", err);
+    try {
+      console.error("❌ UNHANDLED REJECTION:", err);
+    } catch {
+      console.error("❌ UNHANDLED REJECTION (could not read message):", err);
+    }
   });
 
   bot.catch(async (err, ctx) => {
@@ -168,118 +146,147 @@ export async function getBot() {
 }
 
 export async function broadcast(bot: Telegraf<AppContext>, message: string) {
-  const userIds = await redis.smembers("active_users");
+  const userIds = await redis.smembers(REDIS_ACTIVE_USERS_KEY);
 
-  for (const userId of userIds) {
+  for (const userIdStr of userIds) {
+    const userId = Number(userIdStr);
     try {
       await bot.telegram.sendMessage(userId, message);
     } catch (err) {
-      console.error(`Failed to send message to ${userId}:`, err);
+      // Only suppress "chat not found" errors (user blocked bot/deleted account)
+      // Don't log these as they're expected and spam the logs
+      if (!isChatNotFoundError(err)) {
+        console.error(`Failed to send message to ${userId}:`, err);
+      }
     }
   }
 }
 
 async function onStart(ctx: AppContext) {
+  if (!ctx.from) return;
+
   const admin = isAdmin(ctx);
   const menu = createMainMenu(admin);
+
   await recordUser({
-    id: ctx.from!.id,
-    username: ctx.from!.username!,
-    name: `${ctx.from!.first_name || ""} ${ctx.from!.last_name || ""}`,
+    id: ctx.from.id,
+    username: ctx.from.username || ctx.from.id.toString(),
+    name: `${ctx.from.first_name || ""} ${ctx.from.last_name || ""}`.trim(),
   });
+
+  // Add user to active users set
+  await redis.sadd(REDIS_ACTIVE_USERS_KEY, ctx.from.id.toString());
 
   await ctx.reply(menu.text, { reply_markup: menu.reply_markup });
 }
 
-function isAdmin(ctx: AppContext) {
+function isAdmin(ctx: AppContext): boolean {
+  if (!ctx.from?.username) return false;
   const ADMINS = process.env.ADMINS?.split(",") ?? [];
-  const isAdmin = ADMINS.includes(ctx.from!.username!);
-
-  return isAdmin;
+  return ADMINS.includes(ctx.from.username);
 }
 
-async function addUserToSheet(user: {
-  id: number;
-  name: string;
-  username: string;
-  join_date: number;
-}) {
-  const auth = new GoogleAuth({
-    credentials: JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS!),
-    scopes: ["https://www.googleapis.com/auth/spreadsheets"],
-  });
+function isChatNotFoundError(err: unknown): boolean {
+  if (err && typeof err === "object" && "response" in err) {
+    const response = (
+      err as { response?: { error_code?: number; description?: string } }
+    ).response;
+    return (
+      response?.error_code === 400 &&
+      (response?.description?.includes("chat not found") ?? false)
+    );
+  }
+  return false;
+}
 
-  const sheets = google.sheets({ version: "v4", auth });
-  const spreadsheetId = process.env.GOOGLE_SHEET_ID;
-  const sheetName = process.env.GOOGLE_SHEET_NAME;
+async function handleAdminBroadcast(ctx: AppContext) {
+  if (!ctx.from || !ADMIN_ID || !ctx.message) return;
 
-  const { data } = await sheets.spreadsheets.values.get({
-    spreadsheetId,
-    range: `${sheetName}!A:A`,
-  });
+  console.log("admin broadcast");
+  const userIds = await redis.smembers(REDIS_ACTIVE_USERS_KEY);
 
-  const existingIds = new Set(data.values?.flat() || []);
+  for (const userIdStr of userIds) {
+    const userId = Number(userIdStr);
+    if (userId === ADMIN_ID) continue; // skip self
 
-  if (existingIds.has(user.id.toString())) {
-    console.log("User already exists");
+    try {
+      if ("text" in ctx.message && ctx.message.text) {
+        await ctx.telegram.sendMessage(userId, ctx.message.text);
+      } else if ("document" in ctx.message && ctx.message.document) {
+        await ctx.telegram.sendDocument(userId, ctx.message.document.file_id, {
+          caption: ctx.message.caption || "",
+        });
+      } else if ("photo" in ctx.message && ctx.message.photo.length > 0) {
+        await ctx.telegram.sendPhoto(userId, ctx.message.photo[0].file_id, {
+          caption: ctx.message.caption || "",
+        });
+      } else if ("video" in ctx.message && ctx.message.video) {
+        await ctx.telegram.sendVideo(userId, ctx.message.video.file_id, {
+          caption: ctx.message.caption || "",
+        });
+      } else if ("location" in ctx.message && ctx.message.location) {
+        await ctx.telegram.sendLocation(
+          userId,
+          ctx.message.location.latitude,
+          ctx.message.location.longitude
+        );
+      }
+    } catch (err: any) {
+      // remove users who blocked the bot or deleted their account
+      if (err?.response?.description === "Bad Request: chat not found") {
+        await redis.srem(REDIS_ACTIVE_USERS_KEY, userIdStr);
+        console.log(`Removed inactive user ${userId}`);
+      } else {
+        console.error(
+          `Failed to send to ${userId}:`,
+          err.response?.description || err.message
+        );
+      }
+    }
+  }
+}
+
+async function forwardMessageToFeedback(
+  ctx: AppContext,
+  chatId: number
+): Promise<void> {
+  if (!FEEDBACK_CHAT_ID || !ctx.message) {
+    if (!FEEDBACK_CHAT_ID) {
+      console.warn("FEEDBACK_CHAT_ID not set, skipping message forward");
+    }
     return;
   }
 
-  const values = [
-    [
-      user.id,
-      user.name,
-      user.username,
-      new Date(user.join_date).toLocaleString("ru-RU"),
-    ],
-  ];
-
-  await sheets.spreadsheets.values.append({
-    spreadsheetId,
-    range: `${sheetName}`,
-    valueInputOption: "RAW",
-    insertDataOption: "INSERT_ROWS",
-    requestBody: {
-      values,
-    },
-  });
+  try {
+    await ctx.telegram.forwardMessage(
+      FEEDBACK_CHAT_ID,
+      chatId,
+      ctx.message.message_id
+    );
+  } catch (err) {
+    console.error("Failed to forward message to feedback:", err);
+    if (ctx.chat?.type === "private") {
+      await ctx.reply("Что-то пошло не так, попробуйте позже 😔");
+    }
+  }
 }
 
-async function syncUsers(users: User[]) {
-  const auth = new GoogleAuth({
-    credentials: JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS!),
-    scopes: ["https://www.googleapis.com/auth/spreadsheets"],
-  });
+async function deleteUserByUserId(userId: number): Promise<void> {
+  // Scan for all user keys and find the one matching this user ID
+  let cursor = 0;
+  do {
+    const [next, keys] = await redis.scan(cursor, {
+      match: "user:*",
+      count: 100,
+    });
+    cursor = Number(next);
 
-  const sheets = google.sheets({ version: "v4", auth });
-  const spreadsheetId = process.env.GOOGLE_SHEET_ID;
-  const sheetName = process.env.GOOGLE_SHEET_NAME;
-
-  const values = users.map((u) => [
-    u.id,
-    u.name.trim(),
-    u.username,
-    formatTimestampForSheets(+u.first_seen),
-    formatTimestampForSheets(+u.last_seen),
-  ]);
-
-  await sheets.spreadsheets.values.update({
-    spreadsheetId,
-    range: `${sheetName}!A1:E${users.length + 1}`,
-    valueInputOption: "RAW",
-    requestBody: {
-      values: [
-        ["id", "name", "username", "first_seen", "last_seen"],
-        ...values,
-      ],
-    },
-  });
-}
-
-function formatTimestampForSheets(ts: number) {
-  const d = new Date(ts);
-  const pad = (n: number) => n.toString().padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(
-    d.getHours()
-  )}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+    for (const key of keys) {
+      const userData = await redis.hgetall<{ id: string }>(key);
+      if (userData?.id === userId.toString()) {
+        await redis.del(key);
+        return;
+      }
+    }
+  } while (cursor !== 0);
 }
