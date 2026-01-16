@@ -1,5 +1,5 @@
 import { Scenes } from "telegraf";
-import type { MyContext } from "..";
 import { address } from "./address";
+import { AppContext } from "../context";
 
-export const mainStage = new Scenes.Stage<MyContext>([address]);
+export const mainStage = new Scenes.Stage<AppContext>([address]);

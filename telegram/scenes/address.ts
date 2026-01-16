@@ -1,112 +1,26 @@
 import { Scenes } from "telegraf";
 import { bold, fmt, link } from "telegraf/format";
+import { getRestaurants, Restaurant } from "../../redis/actions";
 import type { AppContext } from "../context";
 
 export const address = new Scenes.BaseScene<AppContext>("address");
 
-export type Address = {
-  id: string;
-  name: string;
-  address: string;
-  phone: string;
-  telegram: string | null;
-  hours: {
-    sun_thu: string;
-    fri_sat: string;
-  };
-  url: string;
-};
-
-const ADDRESSES: Address[] = [
-  {
-    id: "1",
-    name: "Горбуфет Шашлычная на Пятницкой",
-    address: "Москва, Пятницкая ул, 16, стр.1",
-    phone: "+7 916 805 2630",
-    telegram: "gurbufet_pyatnitskaya",
-    hours: {
-      sun_thu: "12:00-02:00",
-      fri_sat: "12:00-05:00",
-    },
-    url: "https://yandex.ru/maps/-/CCUDZEAe-A",
-  },
-  {
-    id: "2",
-    name: "Горбуфет Шашлычная на Сретенке",
-    address: "Москва, Сретенка 36",
-    phone: "+7915 277-68-84",
-    telegram: "alkobufet_shashlik_sretenka",
-    hours: {
-      sun_thu: "12:00-02:00",
-      fri_sat: "12:00-05:00",
-    },
-    url: "https://yandex.ru/maps/-/CCUDZAAbWB",
-  },
-  {
-    id: "3",
-    name: "Горбуфет Шашлычная на Павелецкой",
-    address: "Москва, Новокузнецкая 39",
-    phone: "+7909 990-93-10",
-    telegram: "gurbufet_paveletskaya",
-    hours: {
-      sun_thu: "12:00-01:00",
-      fri_sat: "12:00-03:00",
-    },
-    url: "https://yandex.ru/maps/org/gorbufet_shashlychnaya/242127509628/",
-  },
-  {
-    id: "4",
-    name: "Горбуфет Шашлычная на Маяковской",
-    address: "Москва, 2-ая Тверская-Ямская, 2",
-    phone: "+7962 945-95-49",
-    telegram: "gurbufet_mayak",
-    hours: {
-      sun_thu: "12:00-02:00",
-      fri_sat: "12:00-05:00",
-    },
-    url: "https://yandex.ru/maps/org/214066755218",
-  },
-  {
-    id: "5",
-    name: "Горбуфет Пельменная на Тверской",
-    address: "Москва, малая Дмитровка, 3",
-    phone: "+7 916 963 7962",
-    telegram: "gorbufet_pelmennaya",
-    hours: {
-      sun_thu: "12:00-01:00",
-      fri_sat: "12:00-03:00",
-    },
-    url: "https://yandex.ru/maps/-/CLUsN0Pn",
-  },
-  {
-    id: "6",
-    name: "Горбуфет Шашлычная на Кутузовском",
-    address: "Москва, Кутузовский проспект 36А",
-    phone: "+7925 800 52 54",
-    telegram: "alkobufet_shashlik_kutuza",
-    hours: {
-      sun_thu: "12:00-01:00",
-      fri_sat: "12:00-03:00",
-    },
-    url: "https://yandex.ru/maps/org/195930715245",
-  },
-];
-
 address.enter(async (ctx) => {
-  console.log("[scenes] address enter:", ctx.scene.state);
+  // @ts-expect-error
   const path = ctx.scene.state.path;
 
-  // fetch addresses from external
+  const restaurants = await getRestaurants();
+
   if (!path) return;
 
-  const listMenu = addressListMenu(ADDRESSES);
+  const listMenu = restaurantListMenu(restaurants);
 
   if (path === "list") {
     await ctx.editMessageText(listMenu.text, {
       reply_markup: listMenu.reply_markup,
     });
   } else {
-    const address = ADDRESSES.find((address) => address.id === path);
+    const address = restaurants.find((address) => +address.id === +path);
     if (!address) {
       console.log("address not found");
       return;
@@ -121,9 +35,9 @@ address.enter(async (ctx) => {
   await ctx.answerCbQuery();
 });
 
-function adressItem(address: Address) {
-  if (!address) {
-    const addressList = addressListMenu(ADDRESSES);
+function adressItem(restaurant: Restaurant) {
+  if (!restaurant) {
+    const addressList = restaurantListMenu(restaurant);
     return {
       text: addressList.text,
       reply_markup: addressList.reply_markup,
@@ -131,14 +45,14 @@ function adressItem(address: Address) {
   }
 
   const formattedMessage = fmt`
-👨‍🍳${bold`${address.name}`}
-📍${address.address}
-📞${bold`Номер:`} ${address.phone}
-🗓️${bold`Пн-Чт:`} ${address.hours.sun_thu}
-🗓️${bold`Пт-Сб:`} ${address.hours.fri_sat}
+👨‍🍳${bold`${restaurant.name}`}
+📍${restaurant.address}
+📞${bold`Номер:`} ${restaurant.phone}
+🗓️${bold`Пн-Чт:`} ${restaurant.hours.sun_thu}
+🗓️${bold`Пт-Сб:`} ${restaurant.hours.fri_sat}
 ${
-  address.telegram
-    ? link("Связаться с нами в Telegram", `https://t.me/${address.telegram}`)
+  restaurant.telegram
+    ? link("Связаться с нами в Telegram", `https://t.me/${restaurant.telegram}`)
     : ""
 }
 `;
@@ -150,7 +64,7 @@ ${
         [
           {
             text: "📍 Открыть в Яндекс Карты",
-            url: address.url,
+            url: restaurant.url,
           },
         ],
 
@@ -163,9 +77,9 @@ ${
   };
 }
 
-function addressListMenu(addressList: Address[]) {
+function restaurantListMenu(restaurants: Restaurant[]) {
   const inline_keyboard = [
-    ...addressList.map((address) => {
+    ...restaurants.map((address) => {
       return [
         {
           text: address.name,

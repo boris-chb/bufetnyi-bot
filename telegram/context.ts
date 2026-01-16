@@ -10,6 +10,4 @@ export interface AppContext extends Context {
   path: string;
 }
 
-export interface AppSession extends Scenes.SceneSession<AppSceneSession> {
-  // Add other session properties here if needed
-}
+export interface AppSession extends Scenes.SceneSession<AppSceneSession> {}

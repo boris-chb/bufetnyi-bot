@@ -21,15 +21,6 @@ export function mainMenu(admin = false) {
         callback_data: "feedback",
       },
     ],
-
-    // [
-    //   {
-    //     text: "📱 miniapp",
-    //     web_app: {
-    //       url: `https://tg-mini-app-flame.vercel.app/`,
-    //     },
-    //   },
-    // ],
   ];
 
   if (admin) {
