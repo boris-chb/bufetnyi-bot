@@ -13,7 +13,7 @@ const GOOGLE_SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets";
 
 function getGoogleSheetsClient() {
   const auth = new GoogleAuth({
-    credentials: JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS!),
+    keyFile: process.env.GOOGLE_APPLICATION_CREDENTIALS,
     scopes: [GOOGLE_SHEETS_SCOPE],
   });
 
@@ -39,7 +39,7 @@ export async function syncUsersToSheet(users: User[]): Promise<void> {
 
   const values = users.map((u) => [
     u.id,
-    u.name.trim(),
+    String(u.name ?? "").trim(),
     u.username,
     formatTimestampForSheets(+u.first_seen),
     formatTimestampForSheets(+u.last_seen),

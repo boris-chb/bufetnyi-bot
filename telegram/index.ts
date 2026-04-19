@@ -6,15 +6,10 @@ import type { AppContext, AppSession } from "./context";
 import { syncUsersToSheet } from "./google-sheets";
 import { mainMenu as createMainMenu } from "./markup/main-menu";
 import { mainStage } from "./scenes";
-import {
-  isAdmin,
-  handleAdminBroadcast,
-  forwardMessageToFeedback,
-} from "./utils";
+import { isAdmin, handleAdminBroadcast, forwardMessageToFeedback } from "./utils";
 
 let bot: Telegraf<AppContext> | undefined;
 
-export const ADMIN_ID = Number(process.env.ADMIN_ID);
 export const FEEDBACK_CHAT_ID = process.env.FEEDBACK_CHAT_ID;
 export const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 export const REDIS_ACTIVE_USERS_KEY = "active_users";
@@ -29,123 +24,117 @@ export async function getBot() {
     bot = new Telegraf<AppContext>(TELEGRAM_BOT_TOKEN);
     bot.use(session({ defaultSession: (): AppSession => ({}) }));
     bot.use(mainStage.middleware());
-  }
 
-  bot.start(onStart);
+    bot.start(onStart);
 
-  bot.action("main", async (ctx) => {
-    const admin = isAdmin(ctx);
-    const menu = createMainMenu(admin);
-    await ctx.editMessageText(menu.text, { reply_markup: menu.reply_markup });
-    await ctx.answerCbQuery();
-  });
+    bot.action("main", async (ctx) => {
+      const menu = createMainMenu(isAdmin(ctx));
+      await ctx.editMessageText(menu.text, { reply_markup: menu.reply_markup });
+      await ctx.answerCbQuery();
+    });
 
-  bot.action(/^address:(.+)$/, (ctx) => {
-    const path = ctx.match[1];
+    bot.action(/^address:(.+)$/, (ctx) => {
+      const path = ctx.match[1];
+      ctx.scene.enter("address", { path });
+    });
 
-    ctx.scene.enter("address", { path });
-  });
+    bot.action("stats", async (ctx) => {
+      if (!isAdmin(ctx)) return;
 
-  bot.action("stats", async (ctx) => {
-    if (!isAdmin(ctx)) return;
+      await ctx.answerCbQuery();
 
-    await ctx.deleteMessage();
+      const users = await getAllUsers();
 
-    const users = await getAllUsers();
-
-    if (!users || users.length === 0) {
-      await ctx.editMessageText("😔 Не нашел данных о пользователях");
-      return;
-    }
-
-    try {
-      await syncUsersToSheet(users);
-      await ctx.reply(
-        `Обновил <a href="${GOOGLE_SHEET_URL}">таблицу</a> успешно.`,
-        { parse_mode: "HTML" }
-      );
-    } catch (error) {
-      console.error("Failed to sync users to sheet:", error);
-      await ctx.reply("❌ Ошибка при обновлении таблицы");
-    }
-
-    await onStart(ctx);
-  });
-
-  bot.action("feedback", async (ctx) => {
-    await ctx.editMessageText(
-      "✍️ Напишите свой отзыв ниже:\n\n<i>не забывайте в тексте указывать точку в которой вы были!</i>",
-      { parse_mode: "HTML" }
-    );
-  });
-
-  bot.on("message", async (ctx) => {
-    if (!ctx.from || ctx.chat.type !== "private") return;
-
-    const fromId = ctx.from.id;
-    const chatId = ctx.chat.id;
-
-    // Admin broadcasting
-    if (ADMIN_ID && fromId === ADMIN_ID) {
-      await handleAdminBroadcast(ctx);
-      return;
-    }
-
-    // Normal user → forward to feedback group
-    await forwardMessageToFeedback(ctx, chatId);
-
-    // Reply user in private
-    const admin = isAdmin(ctx);
-    const menu = createMainMenu(admin);
-    await ctx.reply("Спасибо за ваш отзыв 🍻");
-    await ctx.reply(menu.text, { reply_markup: menu.reply_markup });
-  });
-
-  bot.command("stop", async (ctx) => {
-    if (!ctx.from) return;
-
-    const userId = ctx.from.id;
-    const username = ctx.from.username;
-
-    // Remove from active users set
-    await redisClient.srem(REDIS_ACTIVE_USERS_KEY, userId.toString());
-
-    // Delete user hash - try by username first if available, then scan by user ID
-    let deleted = false;
-    if (username) {
-      const key = `user:${username}`;
-      const exists = await redisClient.exists(key);
-      if (exists) {
-        await redisClient.del(key);
-        deleted = true;
+      if (!users || users.length === 0) {
+        await ctx.reply("😔 Не нашел данных о пользователях");
+        return;
       }
-    }
 
-    // If not deleted by username (or no username), find and delete by user ID
-    if (!deleted) {
-      await deleteUserByUserId(userId);
-    }
+      try {
+        await syncUsersToSheet(users);
+        await ctx.reply(
+          `Обновил <a href="${GOOGLE_SHEET_URL}">таблицу</a> успешно.`,
+          { parse_mode: "HTML" }
+        );
+      } catch (error) {
+        console.error("Failed to sync users to sheet:", error);
+        await ctx.reply("❌ Ошибка при обновлении таблицы");
+      }
 
-    await ctx.reply("🫂 Всего хорошего, ждем вас еще!");
-  });
+      const menu = createMainMenu(true);
+      await ctx.reply(menu.text, { reply_markup: menu.reply_markup });
+    });
 
-  process.once("SIGINT", () => bot?.stop("SIGINT"));
-  process.once("SIGTERM", () => bot?.stop("SIGTERM"));
-  process.on("unhandledRejection", (err) => {
-    try {
+    bot.action("feedback", async (ctx) => {
+      await ctx.editMessageText(
+        "✍️ Напишите свой отзыв ниже:\n\n<i>не забывайте в тексте указывать точку в которой вы были!</i>",
+        {
+          parse_mode: "HTML",
+          reply_markup: {
+            inline_keyboard: [[{ text: "◀️ Назад", callback_data: "main" }]],
+          },
+        }
+      );
+      await ctx.answerCbQuery();
+    });
+
+    bot.on("message", async (ctx) => {
+      if (!ctx.from || ctx.chat.type !== "private") return;
+
+      const chatId = ctx.chat.id;
+
+      if (isAdmin(ctx)) {
+        await handleAdminBroadcast(ctx, bot!);
+        return;
+      }
+
+      await forwardMessageToFeedback(ctx, chatId);
+
+      await ctx.reply("Спасибо за ваш отзыв 🍻");
+      const menu = createMainMenu(false);
+      await ctx.reply(menu.text, { reply_markup: menu.reply_markup });
+    });
+
+    bot.command("stop", async (ctx) => {
+      if (!ctx.from) return;
+
+      const userId = ctx.from.id;
+      const username = ctx.from.username;
+
+      await redisClient.srem(REDIS_ACTIVE_USERS_KEY, userId.toString());
+
+      let deleted = false;
+      if (username) {
+        const key = `user:${username}`;
+        const exists = await redisClient.exists(key);
+        if (exists) {
+          await redisClient.del(key);
+          await redisClient.del(`userid:${userId}`);
+          deleted = true;
+        }
+      }
+
+      if (!deleted) {
+        await deleteUserByUserId(userId);
+      }
+
+      await ctx.reply("🫂 Всего хорошего, ждем вас еще!");
+    });
+
+    bot.catch(async (err, ctx) => {
+      console.error("Unhandled error:", err);
+      try {
+        const menu = createMainMenu(isAdmin(ctx));
+        await ctx.reply(menu.text, { reply_markup: menu.reply_markup });
+      } catch {
+        // ignore reply failures in error handler
+      }
+    });
+
+    process.on("unhandledRejection", (err) => {
       console.error("❌ UNHANDLED REJECTION:", err);
-    } catch {
-      console.error("❌ UNHANDLED REJECTION (could not read message):", err);
-    }
-  });
-
-  bot.catch(async (err, ctx) => {
-    const admin = isAdmin(ctx);
-    const menu = createMainMenu(admin);
-    console.error("Unhandled error:", err);
-    await ctx.editMessageText("Что-то пошло не так, попробуйте позже");
-    await ctx.reply(menu.text, { reply_markup: menu.reply_markup });
-  });
+    });
+  }
 
   return bot;
 }
@@ -162,7 +151,6 @@ async function onStart(ctx: AppContext) {
     name: `${ctx.from.first_name || ""} ${ctx.from.last_name || ""}`.trim(),
   });
 
-  // Add user to active users set
   await redisClient.sadd(REDIS_ACTIVE_USERS_KEY, ctx.from.id.toString());
 
   await ctx.reply(menu.text, { reply_markup: menu.reply_markup });

@@ -1,8 +1,6 @@
 import type { Scenes, Context } from "telegraf";
 
-export interface AppSceneSession extends Scenes.SceneSessionData {
-  sceneSessionProp: string;
-}
+export interface AppSceneSession extends Scenes.SceneSessionData {}
 
 export interface AppContext extends Context {
   session: AppSession;

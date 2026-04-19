@@ -40,6 +40,9 @@ export async function recordUser({
     name: name ?? username,
     last_seen: now,
   });
+
+  // reverse index so we can find user by numeric ID without a full scan
+  await redisClient.set(`userid:${id}`, username);
 }
 
 export async function getAllUsers(): Promise<User[]> {
@@ -53,6 +56,8 @@ export async function getAllUsers(): Promise<User[]> {
     });
 
     cursor = Number(next);
+
+    if (keys.length === 0) continue;
 
     const pipe = redisClient.pipeline();
     keys.forEach((k) => pipe.hgetall<User>(k));
@@ -71,48 +76,48 @@ export async function getAllUsers(): Promise<User[]> {
 }
 
 export async function getRestaurants(): Promise<Restaurant[]> {
-  const pattern = "restaurant:*";
   let cursor = 0;
-  const allRestaurants: Restaurant[] = [];
+  const keys: string[] = [];
 
-  try {
-    do {
-      const [nextCursor, keys] = await redisClient.scan(cursor, {
-        match: pattern,
-        count: 100,
-      });
+  do {
+    const [next, batch] = await redisClient.scan(cursor, {
+      match: "restaurant:*",
+      count: 100,
+    });
+    cursor = +next;
+    keys.push(...batch);
+  } while (cursor !== 0);
 
-      cursor = +nextCursor;
+  if (keys.length === 0) return [];
 
-      if (keys.length > 0) {
-        const pipelineResults = await Promise.all(
-          keys.map((key) => redisClient.hgetall<Record<string, any>>(key))
-        );
+  const pipe = redisClient.pipeline();
+  keys.forEach((k) => pipe.hgetall<Record<string, any>>(k));
+  const results = await pipe.exec();
 
-        pipelineResults.forEach((data) => {
-          if (data) {
-            const restaurant = { ...data } as any;
-
-            if (typeof restaurant.hours === "string") {
-              try {
-                restaurant.hours = JSON.parse(restaurant.hours);
-              } catch (e) {}
-            }
-
-            allRestaurants.push(restaurant as Restaurant);
-          }
-        });
-      }
-    } while (cursor !== 0);
-
-    return allRestaurants;
-  } catch (error) {
-    throw error;
+  const restaurants: Restaurant[] = [];
+  for (const data of results) {
+    if (!data) continue;
+    const restaurant = { ...data } as any;
+    if (typeof restaurant.hours === "string") {
+      try {
+        restaurant.hours = JSON.parse(restaurant.hours);
+      } catch {}
+    }
+    restaurants.push(restaurant as Restaurant);
   }
+
+  return restaurants;
 }
 
 export async function deleteUserByUserId(userId: number): Promise<void> {
-  // Scan for all user keys and find the one matching this user ID
+  const username = await redisClient.get<string>(`userid:${userId}`);
+  if (username) {
+    await redisClient.del(`user:${username}`);
+    await redisClient.del(`userid:${userId}`);
+    return;
+  }
+
+  // fallback scan for users created before the reverse index existed
   let cursor = 0;
   do {
     const [next, keys] = await redisClient.scan(cursor, {

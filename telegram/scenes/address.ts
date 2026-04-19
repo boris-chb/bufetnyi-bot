@@ -98,6 +98,3 @@ function restaurantListMenu(restaurants: Restaurant[]) {
   };
 }
 
-function handleMention(label: string, username: string) {
-  return fmt`<a href="tg://resolve?domain=${username}">${label}</a>`;
-}

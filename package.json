@@ -1,22 +1,21 @@
 {
   "name": "bufetnyi_bot",
-  "module": "index.ts",
   "type": "module",
   "scripts": {
-    "start": "bun run index.ts",
-    "dev": "bun run --watch index.ts"
-  },
-  "devDependencies": {
-    "@types/bun": "latest"
-  },
-  "peerDependencies": {
-    "typescript": "^5.0.0"
+    "start": "node --import tsx/esm index.ts",
+    "dev": "node --import tsx/esm --watch index.ts",
+    "docker:build": "docker build -t bufetnyi-bot .",
+    "docker:dev": "docker run --env-file .env.local -v $(pwd)/credentials.json:/app/credentials.json -v $(pwd):/app bufetnyi-bot node --import tsx/esm --watch index.ts"
   },
   "dependencies": {
     "@upstash/redis": "^1.35.3",
-    "fastify": "^5.6.2",
     "google-auth-library": "^10.5.0",
     "googleapis": "^165.0.0",
     "telegraf": "^4.16.3"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.0.0"
   }
 }
