@@ -1,9 +1,0 @@
-meta:
-  environment: docker
-  toolVersion: docker
-
-build:
-  dockerfile: Dockerfile
-
-run:
-  persistenceMount: /data

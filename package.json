@@ -5,10 +5,11 @@
     "start": "node --import tsx/esm index.ts",
     "dev": "node --import tsx/esm --watch index.ts",
     "docker:build": "docker build -t bufetnyi-bot .",
-    "docker:dev": "docker run --env-file .env.local -v $(pwd)/credentials.json:/app/credentials.json -v $(pwd):/app bufetnyi-bot node --import tsx/esm --watch index.ts"
+    "docker:dev": "docker run --env-file .env.local -v $(pwd)/credentials.json:/app/credentials.json -v $(pwd):/app -p 3000:3000 bufetnyi-bot node --import tsx/esm --watch index.ts"
   },
   "dependencies": {
     "@upstash/redis": "^1.35.3",
+    "fastify": "^5.8.5",
     "google-auth-library": "^10.5.0",
     "googleapis": "^165.0.0",
     "telegraf": "^4.16.3",
