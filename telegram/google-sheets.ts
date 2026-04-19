@@ -12,8 +12,10 @@ type User = {
 const GOOGLE_SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets";
 
 function getGoogleSheetsClient() {
+  const raw = process.env.GOOGLE_APPLICATION_CREDENTIALS!;
+  const credentials = JSON.parse(raw.trim().replace(/^'+|'+$/g, ""));
   const auth = new GoogleAuth({
-    keyFile: process.env.GOOGLE_APPLICATION_CREDENTIALS,
+    credentials,
     scopes: [GOOGLE_SHEETS_SCOPE],
   });
 
